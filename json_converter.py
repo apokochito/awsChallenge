@@ -1,28 +1,28 @@
-#!/usr/bin/env python3
-
 import json as js
 import xml.etree.ElementTree as et
-import logging as logger
+import logging
+import boto3
+import io
+import os
+from urllib.parse import urlparse
 
-def processXml():
-    logger.debug('Transforming JSON file...')
-    r = et.Element("Reservation")
-        
-    header = et.SubElement(r, "header")
-    body = et.SubElement(r, "body")
+def loadJsonData(event):
+    return js.loads(str(event.get('body')))
+    
+def buildXMLFile(a):
+    return str(et.tostring(a.getroot(), encoding='utf8').decode('utf8'))
 
-    et.SubElement(header, "echoToken").text = data["header"]["echoToken"]
-    et.SubElement(header, "timestamp").text = data["header"]["timestamp"]
-
+def putHeaders(et, header, event, data):
+    et.SubElement(header, "echoToken").text = str(event.get('headers').get('correlationId'))
+    et.SubElement(header, "timestamp").text = str(str(data["reservation"]["lastUpdateTimestamp"]))
+    
+def putBody(et, body, data, r):
     hotel = et.SubElement(body, "hotel")
     et.SubElement(hotel, "uuid").text = data["reservation"]["hotel"]["uuid"]
     et.SubElement(hotel, "code").text = data["reservation"]["hotel"]["code"]
     et.SubElement(hotel, "offset").text = data["reservation"]["hotel"]["offset"]
-
     et.SubElement(body, "reservationId").text = str(data["reservation"]["reservationId"])
-
     reservations = et.SubElement(body, "reservations")
-
     for z in data["reservation"]["confirmationNumbers"]:
         reservation = et.SubElement(reservations, "reservation")
         reservation.set("source", z["source"])
@@ -34,24 +34,50 @@ def processXml():
 
     et.SubElement(body, "lastUpdateTimestamp").text = str(data["reservation"]["lastUpdateTimestamp"])
     et.SubElement(body, "lastUpdateOperatorId").text = str(data["reservation"]["lastUpdateOperatorId"])
-
     a = et.ElementTree(r)
-    logger.info('JSON file transformed.')
+    return a
 
+s3 = boto3.resource('s3')
+
+def lambda_handler(event, context):
     try:
-        logger.debug('Creating XML file...')
-        a.write("new_file.xml", encoding="utf-8")
-        logger.info('XML file created.')
-    except:
-        logger.error('There\'s an error in writing your XML file.')
-
-try:
-    with open("input.json", encoding="utf-8") as json_file:
-        logger.debug('Loading JSON file...')
-        data = js.load(json_file)
-        logger.debug('Closing JSON file...')
-        json_file.close()
-        logger.info('Valid input JSON file.')
-        processXml()
-except:
-    logger.error('There\'s an error with you JSON file, it cannot be read.')
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+        
+        logger.info(event.get('headers').get('correlationId'))
+        logger.info(event.get('headers').get('user'))
+        
+        # Load JSON data
+        data = loadJsonData(event)
+        logger.info(data)
+        
+        # Put main tags
+        r = et.Element("Reservation")
+        header = et.SubElement(r, "header")
+        body = et.SubElement(r, "body")
+        
+        # Put headers
+        putHeaders(et, header, event, data)
+        
+        # Put body
+        a = putBody(et, body, data, r)
+    
+        # Build string XML
+        stringXML = buildXMLFile(a)
+        logger.info(stringXML)
+        
+        # Upload object to S3
+        bucketName='sam-demo-cloudformation-1'
+        bucketKey='new_file.xml'
+        boto3.client('s3').put_object(Bucket='sam-demo-cloudformation-1', Body=stringXML, Key='new_file.xml')
+        logger.info('## S3 URL=https://sam-demo-cloudformation-1.s3.amazonaws.com/new_file.xml')
+    except Exception as inst:
+        # Error message
+        logger.error(str(inst))
+        logger.error('There\'s an error with you JSON body, it cannot be read.')
+        # HTTP error response message
+        return { 'statusCode': 400, 'body': 'There\'s an error processing your JSON body.' }
+    return {
+    'statusCode': 200,
+    'body': 'https://sam-demo-cloudformation-1.s3.amazonaws.com/new_file.xml'
+    }
