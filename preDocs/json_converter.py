@@ -42,13 +42,16 @@ s3 = boto3.resource('s3')
 def lambda_handler(event, context):
     try:
         logger = logging.getLogger()
-        logger.setLevel(logging.INFO)
+        logger.setLevel(os.environ['LOG_LEVEL'])
         
+        logger.info('## CORRELATION ID ##')
         logger.info(event.get('headers').get('correlationId'))
+        logger.info('## USER ##')
         logger.info(event.get('headers').get('user'))
         
         # Load JSON data
         data = loadJsonData(event)
+        logger.info('## JSON RECEIVED ##')
         logger.info(data)
         
         # Put main tags
@@ -64,18 +67,20 @@ def lambda_handler(event, context):
     
         # Build string XML
         stringXML = buildXMLFile(a)
+        logger.info('## XML TRANSFORMED ##')
         logger.info(stringXML)
         
         # Upload object to S3
         bucketName='sam-demo-cloudformation-1'
         bucketKey='new_file.xml'
         boto3.client('s3').put_object(Bucket='sam-demo-cloudformation-1', Body=stringXML, Key='new_file.xml')
-        logger.info('## S3 URL=https://sam-demo-cloudformation-1.s3.amazonaws.com/new_file.xml')
+        logger.info('## S3 URL ##')
+        logger.info('https://sam-demo-cloudformation-1.s3.amazonaws.com/new_file.xml')
     except Exception as inst:
         # Error message
+        logger.error('## FAILURE ##')
         logger.error(str(inst))
-        logger.error('There\'s an error with you JSON body, it cannot be read.')
-        # HTTP error response message
+        # HTTP error response
         return { 'statusCode': 400, 'body': 'There\'s an error processing your JSON body.' }
     return {
     'statusCode': 200,
