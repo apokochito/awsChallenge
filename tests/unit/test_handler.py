@@ -1,7 +1,5 @@
 import json
-
 import pytest
-
 from hello_world import app
 
 
@@ -10,7 +8,7 @@ def apigw_event():
     """ Generates API GW Event"""
 
     return {
-        "body": '{ "test": "body"}',
+        "body": '{\"reservation\":{\"hotel\":{\"uuid\":\"3_c5f3c903-c43d-4967-88d1-79ae81d00fcb\",\"code\":\"TASK1\",\"offset\":\"+06:00\"},\"reservationId\":12345,\"confirmationNumbers\":[{\"confirmationNumber\":\"12345\",\"source\":\"ENCORA\",\"guest\":\"Arturo Vargas\"},{\"confirmationNumber\":\"67890\",\"source\":\"NEARSOFT\",\"guest\":\"Carlos Hernández\"}],\"lastUpdateTimestamp\":\"2018-03-0720:59:541Z\",\"lastUpdateOperatorId\":\"task.user\"}}',
         "resource": "/{proxy+}",
         "requestContext": {
             "resourceId": "123456",
@@ -36,6 +34,8 @@ def apigw_event():
         },
         "queryStringParameters": {"foo": "bar"},
         "headers": {
+            "user": "diana",
+            "correlationId": "907f44fc-6b51-4237-8018-8a840fd87f04",
             "Via": "1.1 08f323deadbeefa7af34d5feb414ce27.cloudfront.net (CloudFront)",
             "Accept-Language": "en-US,en;q=0.8",
             "CloudFront-Is-Desktop-Viewer": "true",
@@ -65,9 +65,6 @@ def apigw_event():
 def test_lambda_handler(apigw_event, mocker):
 
     ret = app.lambda_handler(apigw_event, "")
-    data = json.loads(ret["body"])
+    print(ret)
 
     assert ret["statusCode"] == 200
-    assert "message" in ret["body"]
-    assert data["message"] == "hello world"
-    # assert "location" in data.dict_keys()
