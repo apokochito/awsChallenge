@@ -8,18 +8,21 @@ def load_json_data(event):
     data = js.loads(body)
     return data
 
-def put_headers(event, data):
+def get_echo_token(event):
     echo_token = event.get('headers').get('correlationId')
+    return echo_token
+
+def put_headers(event, header, data):
+    echoToken = event.get('headers').get('correlationId')
     timestamp = str(data["reservation"]["lastUpdateTimestamp"])
-    et.SubElement(header, "echo_token").text = str(echo_token)
+    et.SubElement(header, "echoToken").text = str(echoToken)
     et.SubElement(header, "timestamp").text = str(timestamp)
 
-def put_body(data):
+def put_body(data, body, r):
     hotel = et.SubElement(body, "hotel")
-    reservation_hotel = data["reservation"]["hotel"]
-    et.SubElement(hotel, "uuid").text = reservation_hotel["uuid"]
-    et.SubElement(hotel, "code").text = reservation_hotel["code"]
-    et.SubElement(hotel, "offset").text = reservation_hotel["offset"]
+    et.SubElement(hotel, "uuid").text = data["reservation"]["hotel"]["uuid"]
+    et.SubElement(hotel, "code").text = data["reservation"]["hotel"]["code"]
+    et.SubElement(hotel, "offset").text = data["reservation"]["hotel"]["offset"]
     et.SubElement(body, "reservationId").text = str(data["reservation"]["reservationId"])
     reservations = et.SubElement(body, "reservations")
     for z in data["reservation"]["confirmationNumbers"]:
