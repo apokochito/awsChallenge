@@ -1,9 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 
-Description: API Gateway with Lambda Integration
+Description: AWS API Gateway with a Lambda Integration
 
 Resources:
-  # Apigateway role definition
   ApiGatewayIamRole:
     Type: AWS::IAM::Role
     Properties:
@@ -20,6 +19,7 @@ Resources:
       Path: '/'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+        - arn:aws:iam::aws:policy/CloudWatchFullAccess
       Policies:
         - PolicyName: LambdaAccess
           PolicyDocument:
@@ -28,7 +28,7 @@ Resources:
               - Effect: 'Allow'
                 Action: 'lambda:*'
                 Resource: !GetAtt LambdaFunction.Arn
-  # Lambda role definition
+
   LambdaIamRole:
     Type: AWS::IAM::Role
     Properties:
@@ -52,13 +52,14 @@ Resources:
                   - 's3:*'
                 Resource: '*'
                 Effect: Allow
-  # API Gateway Rest API definition
+
   ApiGatewayRestApi:
     Type: AWS::ApiGateway::RestApi
     Properties:
-      Description: API Gateway with Lambda Integration
-      Name: task-apigateway-restapi
-  # Response error definition for API Gateway definition
+      ApiKeySourceType: HEADER
+      Description: An API Gateway with a Lambda Integration
+      Name: lambda-api
+
   GatewayResponse:
     Type: AWS::ApiGateway::GatewayResponse
     Properties:
@@ -75,31 +76,31 @@ Resources:
       ResponseType: BAD_REQUEST_BODY
       RestApiId: !Ref ApiGatewayRestApi
       StatusCode: '400'
-  # Path /reservation for API Gateway definition
-  ApiGatewayResource:
+
+  ReservationsResource:
     Type: 'AWS::ApiGateway::Resource'
     Properties:
       RestApiId: !Ref ApiGatewayRestApi
       ParentId: !GetAtt
         - ApiGatewayRestApi
         - RootResourceId
-      PathPart: reservation
-  # POST Method for API Gateway definition
-  ApiGatewayMethodPost:
+      PathPart: reservations
+
+  ReservationPost:
     Type: AWS::ApiGateway::Method
     Properties:
       ApiKeyRequired: false
       AuthorizationType: NONE
       HttpMethod: POST
       Integration:
+        RequestParameters:
+          integration.request.header.user: method.request.header.user
+          integration.request.header.echoToken: method.request.header.echoToken
         ConnectionType: INTERNET
         Credentials: !GetAtt ApiGatewayIamRole.Arn
         IntegrationHttpMethod: POST
         PassthroughBehavior: WHEN_NO_MATCH
         TimeoutInMillis: 29000
-        RequestParameters:
-          integration.request.header.user: method.request.header.user
-          integration.request.header.echoToken: method.request.header.echoToken
         Type: AWS
         Uri: !Sub
           - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
@@ -111,7 +112,7 @@ Resources:
               method.response.header.Link: integration.response.body.headers.next
             StatusCode: 201
       OperationName: 'post-reservation'
-      ResourceId: !Ref ApiGatewayResource
+      ResourceId: !Ref ReservationsResource
       RestApiId: !Ref ApiGatewayRestApi
       RequestModels:
         application/json: !Ref RequestModel
@@ -125,48 +126,7 @@ Resources:
           ResponseParameters:
             method.response.header.Link: true
           StatusCode: 201
-  # Request Model for API Gateway definition
-  RequestModel:
-    Type: 'AWS::ApiGateway::Model'
-    Properties:
-      ContentType: application/json
-      Name: Request
-      RestApiId: !Ref ApiGatewayRestApi
-      Schema:
-        $schema: 'http://json-schema.org/draft-04/schema#'
-        title: reservation
-        type: object
-        properties:
-          reservation:
-              type: object
-              properties:
-                hotel:
-                  type: object
-                  properties:
-                    uuid:
-                      type: string
-                    code:
-                      type: string
-                    offset:
-                      type: string
-                reservationId:
-                  type: number
-                confirmationNumbers:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      confirmationNumber:
-                        type: string
-                      source:
-                        type: string
-                      guest:
-                        type: string
-                lastUpdateTimestamp:
-                  type: string
-                lastUpdateOperatorId:
-                  type: string
-  # Response model
+
   ResponseModel:
     Type: AWS::ApiGateway::Model
     Properties:
@@ -177,7 +137,45 @@ Resources:
         $schema: 'http://json-schema.org/draft-04/schema#'
         title: response
         type: string
-  # Header Model for user and echoToken
+
+  RequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      Name: "Post Validator"
+      RestApiId: !Ref ApiGatewayRestApi
+      ValidateRequestBody: true
+      ValidateRequestParameters: false
+
+  RequestModel:
+    Type: 'AWS::ApiGateway::Model'
+    Properties:
+      ContentType: application/json
+      Name: Request
+      RestApiId: !Ref ApiGatewayRestApi
+      Schema:
+        $schema: 'http://json-schema.org/draft-04/schema#'
+        title: request
+        type: object
+        additionalProperties: false
+        properties:
+          header:
+            $ref: !Join
+              - ''
+              - - 'https://apigateway.amazonaws.com/restapis/'
+                - !Ref ApiGatewayRestApi
+                - /models/
+                - !Ref HeaderModel
+          reservation:
+            $ref: !Join
+              - ''
+              - - 'https://apigateway.amazonaws.com/restapis/'
+                - !Ref ApiGatewayRestApi
+                - /models/
+                - !Ref ReservationModel
+        required:
+          - header
+          - reservation
+
   HeaderModel:
     Type: 'AWS::ApiGateway::Model'
     Properties:
@@ -194,18 +192,111 @@ Resources:
             type: string
           echoToken:
             type: string
+          timestamp:
+            type: string
         required:
           - user
           - echoToken
-  # Request Validator (headers and body)
-  RequestValidator:
-    Type: AWS::ApiGateway::RequestValidator
+
+  ReservationModel:
+    Type: 'AWS::ApiGateway::Model'
     Properties:
-      Name: "Post Validator"
+      ContentType: application/json
+      Name: Reservation
       RestApiId: !Ref ApiGatewayRestApi
-      ValidateRequestBody: true
-      ValidateRequestParameters: false
-  # Lambda definition
+      Schema:
+        $schema: 'http://json-schema.org/draft-04/schema#'
+        title: reservation
+        type: object
+        additionalProperties: false
+        properties:
+          hotel:
+            $ref: !Join
+              - ''
+              - - 'https://apigateway.amazonaws.com/restapis/'
+                - !Ref ApiGatewayRestApi
+                - /models/
+                - !Ref HotelModel
+          confirmationNumbers:
+            $ref: !Join
+              - ''
+              - - 'https://apigateway.amazonaws.com/restapis/'
+                - !Ref ApiGatewayRestApi
+                - /models/
+                - !Ref ConfirmationNumbersModel
+          reservationId:
+            type: integer
+          lastUpdateTimestamp:
+            type: string
+          lastUpdateOperatorId:
+            type: string
+        required:
+          - reservationId
+          - hotel
+
+  HotelModel:
+    Type: 'AWS::ApiGateway::Model'
+    Properties:
+      ContentType: application/json
+      Name: Hotel
+      RestApiId: !Ref ApiGatewayRestApi
+      Schema:
+        $schema: 'http://json-schema.org/draft-04/schema#'
+        title: hotel
+        type: object
+        additionalProperties: false
+        properties:
+          uuid:
+            type: string
+          code:
+            type: string
+          offset:
+            type: string
+        required:
+          - uuid
+          - code
+
+  ConfirmationNumbersModel:
+    Type: 'AWS::ApiGateway::Model'
+    Properties:
+      ContentType: application/json
+      Name: ConfirmationNumbers
+      RestApiId: !Ref ApiGatewayRestApi
+      Schema:
+        $schema: 'http://json-schema.org/draft-04/schema'
+        title: confirmationNumbers
+        type: array
+        items:
+          $ref: !Join
+            - ''
+            - - 'https://apigateway.amazonaws.com/restapis/'
+              - !Ref ApiGatewayRestApi
+              - /models/
+              - !Ref ConfirmationNumberModel
+
+  ConfirmationNumberModel:
+    Type: 'AWS::ApiGateway::Model'
+    Properties:
+      ContentType: application/json
+      Name: ConfirmationNumber
+      RestApiId: !Ref ApiGatewayRestApi
+      Schema:
+        $schema: 'http://json-schema.org/draft-04/schema'
+        title: confirmationNumber
+        type: object
+        additionalProperties: false
+        properties:
+          confirmationNumber:
+            type: string
+          source:
+            type: string
+          guest:
+            type: string
+        required:
+          - confirmationNumber
+          - source
+          - guest
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -217,24 +308,25 @@ Resources:
                         'statusCode': 200,
                         'body': json.dumps('Hello, World!')
                       }
-      Description: AWS Lambda function
-      FunctionName: 'task-lambda-function'
-      Handler: lambda_function.lambda_handler
-      MemorySize: 400
+      Description: AWS Lambda function for SKT task
+      FunctionName: 'lambda-function'
+      Handler: src/lambda_function.lambda_handler
+      MemorySize: 256
       Role: !GetAtt LambdaIamRole.Arn
-      Runtime: python3.9
-      Timeout: 100
+      Runtime: python3.8
+      Timeout: 60
       Environment:
         Variables:
-          LOGGER_LEVEL: INFO
-  # S3 Bucket definition
+          LOGGING_LEVEL: DEBUG
+          BUCKET_NAME: !Ref S3Bucket
+
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: sam-demo-cloudformation-1
+      BucketName: skt-task-bucket
       AccessControl: PublicRead
     DeletionPolicy: Delete
-  # REST API Deployment
+
   RestApiDeployment:
     Type: AWS::ApiGateway::Deployment
     Properties:
@@ -248,9 +340,13 @@ Resources:
       - ApiGatewayRestApi
       - GatewayResponse
       - RequestValidator
-      - ApiGatewayMethodPost
+      - ReservationPost
       - RequestModel
       - HeaderModel
+      - ReservationModel
+      - HotelModel
+      - ConfirmationNumbersModel
+      - ConfirmationNumberModel
 
 Outputs:
   apiGatewayInvokeURL:

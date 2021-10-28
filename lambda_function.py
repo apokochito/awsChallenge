@@ -9,7 +9,7 @@ def lambda_handler(event, context):
     # Load JSON data
     try:
         logger = logging.getLogger()
-        logger.setLevel(os.environ['LOG_LEVEL'])
+        logger.setLevel(os.environ['LOGGER_LEVEL'])
         data = transform_service.load_json_data(event)
     except Exception as inst:
         logger.error(str(inst))
