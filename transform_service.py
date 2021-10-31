@@ -3,19 +3,18 @@ import xml.etree.ElementTree as et
 import logging
 
 def load_json_data(event):
-    body = str(event.get('body'))
-    logging.debug('Receiving JSON body: ', body)
-    data = js.loads(body)
-    return data
+    body = event.get('body')
+    key = js.loads(js.dumps(body, default=str))
+    return key
 
 def get_echo_token(event):
-    echo_token = event.get('headers').get('correlationId')
+    echo_token = event.get('headers').get('echoToken')
     return echo_token
 
 def put_headers(event, header, data):
-    echoToken = event.get('headers').get('correlationId')
-    timestamp = str(data["reservation"]["lastUpdateTimestamp"])
-    et.SubElement(header, "echoToken").text = str(echoToken)
+    echoToken = event.get('headers').get('echoToken')
+    timestamp = data["reservation"]["lastUpdateTimestamp"]
+    et.SubElement(header, "echoToken").text = echoToken
     et.SubElement(header, "timestamp").text = str(timestamp)
 
 def put_body(data, body, r):

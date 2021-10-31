@@ -28,6 +28,7 @@ Resources:
               - Effect: 'Allow'
                 Action: 'lambda:*'
                 Resource: !GetAtt LambdaFunction.Arn
+
   # Lambda role definition
   LambdaIamRole:
     Type: AWS::IAM::Role
@@ -52,12 +53,15 @@ Resources:
                   - 's3:*'
                 Resource: '*'
                 Effect: Allow
+
   # API Gateway Rest API definition
   ApiGatewayRestApi:
     Type: AWS::ApiGateway::RestApi
     Properties:
+      ApiKeySourceType: HEADER
       Description: API Gateway with Lambda Integration
-      Name: task-apigateway-restapi
+      Name: lambda-api
+
   # Response error definition for API Gateway definition
   GatewayResponse:
     Type: AWS::ApiGateway::GatewayResponse
@@ -75,6 +79,7 @@ Resources:
       ResponseType: BAD_REQUEST_BODY
       RestApiId: !Ref ApiGatewayRestApi
       StatusCode: '400'
+
   # Path /reservation for API Gateway definition
   ApiGatewayResource:
     Type: 'AWS::ApiGateway::Resource'
@@ -83,7 +88,8 @@ Resources:
       ParentId: !GetAtt
         - ApiGatewayRestApi
         - RootResourceId
-      PathPart: reservation
+      PathPart: reservations
+
   # POST Method for API Gateway definition
   ApiGatewayMethodPost:
     Type: AWS::ApiGateway::Method
@@ -95,11 +101,31 @@ Resources:
         ConnectionType: INTERNET
         Credentials: !GetAtt ApiGatewayIamRole.Arn
         IntegrationHttpMethod: POST
+        RequestTemplates:
+          "application/json": "{
+          \"body\" : $input.json('$'),
+          \"headers\": {
+            #foreach($header in $input.params().header.keySet())
+            \"$header\": \"$util.escapeJavaScript($input.params().header.get($header))\" #if($foreach.hasNext),#end
+
+            #end
+          },
+          \"method\": \"$context.httpMethod\",
+          \"params\": {
+            #foreach($param in $input.params().path.keySet())
+            \"$param\": \"$util.escapeJavaScript($input.params().path.get($param))\" #if($foreach.hasNext),#end
+
+            #end
+          },
+          \"query\": {
+            #foreach($queryParam in $input.params().querystring.keySet())
+            \"$queryParam\": \"$util.escapeJavaScript($input.params().querystring.get($queryParam))\" #if($foreach.hasNext),#end
+
+            #end
+          }  
+        }"
         PassthroughBehavior: WHEN_NO_MATCH
         TimeoutInMillis: 29000
-        RequestParameters:
-          integration.request.header.user: method.request.header.user
-          integration.request.header.echoToken: method.request.header.echoToken
         Type: AWS
         Uri: !Sub
           - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
@@ -125,12 +151,13 @@ Resources:
           ResponseParameters:
             method.response.header.Link: true
           StatusCode: 201
+
   # Request Model for API Gateway definition
   RequestModel:
     Type: 'AWS::ApiGateway::Model'
     Properties:
       ContentType: application/json
-      Name: Request
+      Name: RequestModel
       RestApiId: !Ref ApiGatewayRestApi
       Schema:
         $schema: 'http://json-schema.org/draft-04/schema#'
@@ -166,6 +193,7 @@ Resources:
                   type: string
                 lastUpdateOperatorId:
                   type: string
+
   # Response model
   ResponseModel:
     Type: AWS::ApiGateway::Model
@@ -177,26 +205,7 @@ Resources:
         $schema: 'http://json-schema.org/draft-04/schema#'
         title: response
         type: string
-  # Header Model for user and echoToken
-  HeaderModel:
-    Type: 'AWS::ApiGateway::Model'
-    Properties:
-      ContentType: application/json
-      Name: Header
-      RestApiId: !Ref ApiGatewayRestApi
-      Schema:
-        $schema: 'http://json-schema.org/draft-04/schema#'
-        title: header
-        type: object
-        additionalProperties: false
-        properties:
-          user:
-            type: string
-          echoToken:
-            type: string
-        required:
-          - user
-          - echoToken
+
   # Request Validator (headers and body)
   RequestValidator:
     Type: AWS::ApiGateway::RequestValidator
@@ -204,7 +213,8 @@ Resources:
       Name: "Post Validator"
       RestApiId: !Ref ApiGatewayRestApi
       ValidateRequestBody: true
-      ValidateRequestParameters: false
+      ValidateRequestParameters: true
+
   # Lambda definition
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -218,7 +228,7 @@ Resources:
                         'body': json.dumps('Hello, World!')
                       }
       Description: AWS Lambda function
-      FunctionName: 'task-lambda-function'
+      FunctionName: 'lambda-function'
       Handler: lambda_function.lambda_handler
       MemorySize: 400
       Role: !GetAtt LambdaIamRole.Arn
@@ -227,6 +237,7 @@ Resources:
       Environment:
         Variables:
           LOGGER_LEVEL: INFO
+
   # S3 Bucket definition
   S3Bucket:
     Type: AWS::S3::Bucket
@@ -234,6 +245,7 @@ Resources:
       BucketName: sam-demo-cloudformation-1
       AccessControl: PublicRead
     DeletionPolicy: Delete
+    
   # REST API Deployment
   RestApiDeployment:
     Type: AWS::ApiGateway::Deployment
@@ -250,7 +262,6 @@ Resources:
       - RequestValidator
       - ApiGatewayMethodPost
       - RequestModel
-      - HeaderModel
 
 Outputs:
   apiGatewayInvokeURL:
