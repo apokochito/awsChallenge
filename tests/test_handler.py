@@ -1,38 +1,33 @@
 import json
 import pytest
-from hello_world import app
+import os
+from unittest import mock
+from lambda_function import lambda_handler
 
+# Mocking ENV Variable
+@pytest.fixture(autouse=True)
+def mock_settings_env_vars():
+    with mock.patch.dict(os.environ, {"LOGGER_LEVEL": "INFO"}):
+        yield
+
+def test_frobnication_colour():
+    assert os.environ["LOGGER_LEVEL"] == "INFO"
 
 @pytest.fixture()
 def apigw_event():
     """ Generates API GW Event"""
 
+    data = {"reservation":{"hotel":{"uuid":"3_c5f3c903-c43d-4967-88d1-79ae81d00fcb","code":"TASK1","offset":"+06:00"},"reservationId":12345,"confirmationNumbers":[{"confirmationNumber":"12345","source":"ENCORA","guest":"Arturo Vargas"},{"confirmationNumber":"67890","source":"NEARSOFT","guest":"Carlos Hernández"}],"lastUpdateTimestamp":"2018-03-0720:59:541Z","lastUpdateOperatorId":"task.user"}}
+
     return {
-        "body": '{\"reservation\":{\"hotel\":{\"uuid\":\"3_c5f3c903-c43d-4967-88d1-79ae81d00fcb\",\"code\":\"TASK1\",\"offset\":\"+06:00\"},\"reservationId\":12345,\"confirmationNumbers\":[{\"confirmationNumber\":\"12345\",\"source\":\"ENCORA\",\"guest\":\"Arturo Vargas\"},{\"confirmationNumber\":\"67890\",\"source\":\"NEARSOFT\",\"guest\":\"Carlos Hernández\"}],\"lastUpdateTimestamp\":\"2018-03-0720:59:541Z\",\"lastUpdateOperatorId\":\"task.user\"}}',
-        "resource": "/{proxy+}",
+        "body": data,
         "requestContext": {
             "resourceId": "123456",
             "apiId": "1234567890",
             "resourcePath": "/{proxy+}",
             "httpMethod": "POST",
             "requestId": "c6af9ac6-7b61-11e6-9a41-93e8deadbeef",
-            "accountId": "123456789012",
-            "identity": {
-                "apiKey": "",
-                "userArn": "",
-                "cognitoAuthenticationType": "",
-                "caller": "",
-                "userAgent": "Custom User Agent String",
-                "user": "",
-                "cognitoIdentityPoolId": "",
-                "cognitoIdentityId": "",
-                "cognitoAuthenticationProvider": "",
-                "sourceIp": "127.0.0.1",
-                "accountId": "",
-            },
-            "stage": "prod",
-        },
-        "queryStringParameters": {"foo": "bar"},
+            "accountId": "123456789012"},
         "headers": {
             "user": "diana",
             "correlationId": "907f44fc-6b51-4237-8018-8a840fd87f04",
@@ -53,18 +48,17 @@ def apigw_event():
             "Cache-Control": "max-age=0",
             "User-Agent": "Custom User Agent String",
             "CloudFront-Forwarded-Proto": "https",
-            "Accept-Encoding": "gzip, deflate, sdch",
+            "Accept-Encoding": "gzip, deflate, sdch"
         },
-        "pathParameters": {"proxy": "/examplepath"},
+        "pathParameters": {"proxy": "/v1/reservations"},
         "httpMethod": "POST",
-        "stageVariables": {"baz": "qux"},
-        "path": "/examplepath",
+        "path": "/v1/reservations"
     }
 
 
 def test_lambda_handler(apigw_event, mocker):
 
-    ret = app.lambda_handler(apigw_event, "")
+    ret = lambda_handler(apigw_event, "")
     print(ret)
 
     assert ret["statusCode"] == 200
