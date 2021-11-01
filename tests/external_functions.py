@@ -64,16 +64,6 @@ def test_lambda_handler_external_function(apigw_event, mocker):
     print(ret)
 
     assert transform_service.get_echo_token(apigw_event) == "907f44fc-6b51-4237-8018-8a840fd87f04"
-
-    r = et.Element("Reservation")
-    header = et.SubElement(r, "header")
-    body = et.SubElement(r, "body")
-    tree = transform_service.put_body(data, body, r)
-    result = transform_service.build_xml_file(tree)
-
-    expect = et.tostring(result)
-
-    assert expect == ""
     assert ret["statusCode"] == 200
 
 
