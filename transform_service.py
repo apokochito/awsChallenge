@@ -3,6 +3,9 @@ import xml.etree.ElementTree as et
 import logging
 
 def load_json_data(event):
+    logging.info('Body received: ' + str(event.get('body')))
+    logging.info('echoToken received: ' + str(event.get('headers').get('echoToken')))
+    logging.info('User received: ' + str(event.get('headers').get('user')))
     body = event.get('body')
     key = js.loads(js.dumps(body, default=str))
     return key

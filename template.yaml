@@ -204,7 +204,7 @@ Resources:
       Schema:
         $schema: 'http://json-schema.org/draft-04/schema#'
         title: response
-        type: string
+        type: object
 
   # Request Validator (headers and body)
   RequestValidator:

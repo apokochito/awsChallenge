@@ -4,11 +4,11 @@ Create a template to deploy with CloudFormation for a Serverless Application wit
 ### Commands
 	- sam init --runtime python3.9 --name pytask
 	- sam build
-	- sam deploy --guided --capabilities CAPABILITY_IAM
+	- sam deploy --guided --capabilities CAPABILITY_NAMED_IAM
 	- Deploy
 		- aws cloudformation deploy --stack-name task --template-file template.yaml --capabilities CAPABILITY_NAMED_IAM
 	- Lambda Code
-		- aws lambda update-function-code --function-name  task-lambda-function --zip-file fileb://Code.zip
+		- aws lambda update-function-code --function-name lambda-function --zip-file fileb://Code.zip
 		- aws s3api put-object --bucket text-content --key Code.zip --body Code.zip
 
 ### TODO

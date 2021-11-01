@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as et
+import json as js
 import logging
 import io
 import transform_service
@@ -28,6 +29,7 @@ def lambda_handler(event, context):
         tree = transform_service.put_body(data, body, r)
         
         result = transform_service.build_xml_file(tree)
+        logger.info('XMl file created: ' + str(result))
     except Exception as inst:
         logger.error(str(inst))
         logger.error('There\'s an error transforming your JSON body.')
@@ -37,9 +39,9 @@ def lambda_handler(event, context):
     try:
         file_name = transform_service.get_echo_token(event)
         s3_client.update_file(result, file_name)
+        logger.info('File URL: https://sam-demo-cloudformation-1.s3.amazonaws.com/' + str(file_name))
     except Exception as inst:
         logger.error(str(inst))
         logger.error('There\'s an error updating your JSON body.')
         return { 'statusCode': 500, 'body': 'Error while updating JSON object.' }
-    
-    return { 'statusCode': 200, 'body': 'https://sam-demo-cloudformation-1.s3.amazonaws.com/new_file.xml' }
+    return { "statusCode": 200, "body": js.loads(js.dumps({"echoToken": file_name, "url": "https://sam-demo-cloudformation-1.s3.amazonaws.com/" + file_name})) }
