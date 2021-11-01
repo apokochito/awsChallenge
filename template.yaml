@@ -1,0 +1,268 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: API Gateway with Lambda Integration
+
+Resources:
+  # Apigateway role definition
+  ApiGatewayIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ''
+            Effect: 'Allow'
+            Principal:
+              Service:
+                - 'apigateway.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: '/'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+      Policies:
+        - PolicyName: LambdaAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action: 'lambda:*'
+                Resource: !GetAtt LambdaFunction.Arn
+
+  # Lambda role definition
+  LambdaIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaServiceRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+      Path: '/'
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - 's3:*'
+                Resource: '*'
+                Effect: Allow
+
+  # API Gateway Rest API definition
+  ApiGatewayRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      ApiKeySourceType: HEADER
+      Description: API Gateway with Lambda Integration
+      Name: lambda-api
+
+  # Response error definition for API Gateway definition
+  GatewayResponse:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      ResponseTemplates:
+        application/json: |
+          {
+            "error": {
+              "code": 400,
+              "stage": "$context.stage",
+              "request": "$context.requestId",
+              "message": "$context.error.validationErrorString"
+            }
+          }
+      ResponseType: BAD_REQUEST_BODY
+      RestApiId: !Ref ApiGatewayRestApi
+      StatusCode: '400'
+
+  # Path /reservation for API Gateway definition
+  ApiGatewayResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ParentId: !GetAtt
+        - ApiGatewayRestApi
+        - RootResourceId
+      PathPart: reservations
+
+  # POST Method for API Gateway definition
+  ApiGatewayMethodPost:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: POST
+      Integration:
+        ConnectionType: INTERNET
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        IntegrationHttpMethod: POST
+        RequestTemplates:
+          "application/json": "{
+          \"body\" : $input.json('$'),
+          \"headers\": {
+            #foreach($header in $input.params().header.keySet())
+            \"$header\": \"$util.escapeJavaScript($input.params().header.get($header))\" #if($foreach.hasNext),#end
+
+            #end
+          },
+          \"method\": \"$context.httpMethod\",
+          \"params\": {
+            #foreach($param in $input.params().path.keySet())
+            \"$param\": \"$util.escapeJavaScript($input.params().path.get($param))\" #if($foreach.hasNext),#end
+
+            #end
+          },
+          \"query\": {
+            #foreach($queryParam in $input.params().querystring.keySet())
+            \"$queryParam\": \"$util.escapeJavaScript($input.params().querystring.get($queryParam))\" #if($foreach.hasNext),#end
+
+            #end
+          }  
+        }"
+        PassthroughBehavior: WHEN_NO_MATCH
+        TimeoutInMillis: 29000
+        Type: AWS
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
+          - lambdaArn: !GetAtt LambdaFunction.Arn
+        IntegrationResponses:
+          - ResponseTemplates:
+              application/json: $input.json('$.body')
+            ResponseParameters:
+              method.response.header.Link: integration.response.body.headers.next
+            StatusCode: 201
+      OperationName: 'post-reservation'
+      ResourceId: !Ref ApiGatewayResource
+      RestApiId: !Ref ApiGatewayRestApi
+      RequestModels:
+        application/json: !Ref RequestModel
+      RequestValidatorId: !Ref RequestValidator
+      RequestParameters:
+        method.request.header.user: true
+        method.request.header.echoToken: true
+      MethodResponses:
+        - ResponseModels:
+            application/json: !Ref ResponseModel
+          ResponseParameters:
+            method.response.header.Link: true
+          StatusCode: 201
+
+  # Request Model for API Gateway definition
+  RequestModel:
+    Type: 'AWS::ApiGateway::Model'
+    Properties:
+      ContentType: application/json
+      Name: RequestModel
+      RestApiId: !Ref ApiGatewayRestApi
+      Schema:
+        $schema: 'http://json-schema.org/draft-04/schema#'
+        title: reservation
+        type: object
+        properties:
+          reservation:
+              type: object
+              properties:
+                hotel:
+                  type: object
+                  properties:
+                    uuid:
+                      type: string
+                    code:
+                      type: string
+                    offset:
+                      type: string
+                reservationId:
+                  type: number
+                confirmationNumbers:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      confirmationNumber:
+                        type: string
+                      source:
+                        type: string
+                      guest:
+                        type: string
+                lastUpdateTimestamp:
+                  type: string
+                lastUpdateOperatorId:
+                  type: string
+
+  # Response model
+  ResponseModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      ContentType: application/json
+      Name: ResponseModel
+      RestApiId: !Ref ApiGatewayRestApi
+      Schema:
+        $schema: 'http://json-schema.org/draft-04/schema#'
+        title: response
+        type: object
+
+  # Request Validator (headers and body)
+  RequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      Name: "Post Validator"
+      RestApiId: !Ref ApiGatewayRestApi
+      ValidateRequestBody: true
+      ValidateRequestParameters: true
+
+  # Lambda definition
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+                      return {
+                        'statusCode': 200,
+                        'body': json.dumps('Hello, World!')
+                      }
+      Description: AWS Lambda function
+      FunctionName: 'lambda-function'
+      Handler: lambda_function.lambda_handler
+      MemorySize: 400
+      Role: !GetAtt LambdaIamRole.Arn
+      Runtime: python3.9
+      Timeout: 100
+      Environment:
+        Variables:
+          LOGGER_LEVEL: INFO
+
+  # S3 Bucket definition
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: sam-demo-cloudformation-1
+      AccessControl: PublicRead
+    DeletionPolicy: Delete
+    
+  # REST API Deployment
+  RestApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      StageName: v1
+      StageDescription:
+        DataTraceEnabled: true
+        LoggingLevel: INFO
+        MetricsEnabled: true
+    DependsOn:
+      - ApiGatewayRestApi
+      - GatewayResponse
+      - RequestValidator
+      - ApiGatewayMethodPost
+      - RequestModel
+
+Outputs:
+  apiGatewayInvokeURL:
+    Value: !Sub https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/v1/reservations
